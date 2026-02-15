@@ -1,0 +1,9 @@
+cq
+dist/
+build/
+*.log
+coverage.out
+.DS_Store
+.idea/
+.vscode/
+scripts/
