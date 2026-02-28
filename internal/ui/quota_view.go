@@ -371,6 +371,17 @@ func isConfirmedExhausted(data api.UsageData) bool {
 	return clampRatio(window.LeftPercent/100) <= 0
 }
 
+func isConfirmedNonExhausted(data api.UsageData) bool {
+	if data.LimitReached {
+		return false
+	}
+	window, ok := compactPrimaryWindow(data)
+	if !ok {
+		return false
+	}
+	return clampRatio(window.LeftPercent/100) > 0
+}
+
 func clampRatio(ratio float64) float64 {
 	if ratio < 0 {
 		return 0

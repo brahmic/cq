@@ -131,6 +131,25 @@ func TestRefreshAllLoadsInListOrderNotActivePriority(t *testing.T) {
 	}
 }
 
+func TestRefreshAllInCompactLoadsByVisualOrderWithExhaustedBlock(t *testing.T) {
+	m := testModelForHotkeys(4)
+	m.CompactMode = true
+	// visual order in compact should become: 1,3,2,4
+	m.ExhaustedSticky["managed:2"] = true
+	m.ExhaustedSticky["managed:4"] = true
+	m.ActiveAccountIx = 3 // focused account should not be prioritized
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	got := updated.(Model)
+
+	if !got.LoadingMap["managed:1"] || !got.LoadingMap["managed:3"] {
+		t.Fatalf("expected first two compact visual accounts (1,3) to be scheduled, got loading map: %#v", got.LoadingMap)
+	}
+	if got.LoadingMap["managed:2"] || got.LoadingMap["managed:4"] {
+		t.Fatalf("did not expect exhausted block accounts (2,4) to be scheduled first, got loading map: %#v", got.LoadingMap)
+	}
+}
+
 func TestCompactArrowNavigationFollowsVisualOrderWithExhaustedBlock(t *testing.T) {
 	m := testModelForHotkeys(4)
 	m.CompactMode = true

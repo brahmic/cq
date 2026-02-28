@@ -1063,7 +1063,18 @@ func (m *Model) fetchNextCmd() tea.Cmd {
 	}
 
 	cmds := make([]tea.Cmd, 0, availableSlots)
-	for _, acc := range m.Accounts {
+	orderedAccounts := m.Accounts
+	if m.CompactMode {
+		orderedAccounts = make([]*config.Account, 0, len(m.Accounts))
+		for _, idx := range m.compactVisualOrderIndices() {
+			if idx < 0 || idx >= len(m.Accounts) {
+				continue
+			}
+			orderedAccounts = append(orderedAccounts, m.Accounts[idx])
+		}
+	}
+
+	for _, acc := range orderedAccounts {
 		if cmd := checkAccount(acc); cmd != nil {
 			cmds = append(cmds, cmd)
 			availableSlots--
@@ -1699,17 +1710,29 @@ func (m *Model) pruneKnownPlanTypes() {
 }
 
 func (m *Model) setExhaustedStickyIfConfirmed(accountKey string, data api.UsageData) bool {
-	if accountKey == "" || !isConfirmedExhausted(data) {
+	if accountKey == "" {
 		return false
 	}
 	if m.ExhaustedSticky == nil {
 		m.ExhaustedSticky = make(map[string]bool)
 	}
-	if m.ExhaustedSticky[accountKey] {
-		return false
+
+	// Persist exhausted state as soon as it is confirmed.
+	if isConfirmedExhausted(data) {
+		if m.ExhaustedSticky[accountKey] {
+			return false
+		}
+		m.ExhaustedSticky[accountKey] = true
+		return true
 	}
-	m.ExhaustedSticky[accountKey] = true
-	return true
+
+	// Clear sticky state once fresh quota data confirms recovery.
+	if isConfirmedNonExhausted(data) && m.ExhaustedSticky[accountKey] {
+		delete(m.ExhaustedSticky, accountKey)
+		return true
+	}
+
+	return false
 }
 
 func (m *Model) pruneExhaustedSticky() bool {

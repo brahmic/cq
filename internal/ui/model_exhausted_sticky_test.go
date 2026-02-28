@@ -51,7 +51,7 @@ func TestDataMsgSetsExhaustedStickyWhenLimitReached(t *testing.T) {
 	}
 }
 
-func TestDataMsgSetsExhaustedStickyAtZeroWeeklyAndDoesNotUnset(t *testing.T) {
+func TestDataMsgSetsExhaustedStickyAtZeroWeeklyAndUnsetsAfterRecovery(t *testing.T) {
 	account := &config.Account{Key: "acc-1", Label: "user@example.com", AccountID: "acc-1", Source: config.SourceManaged}
 	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{}, true)
 	m.LoadingMap = map[string]bool{"acc-1": true}
@@ -78,8 +78,8 @@ func TestDataMsgSetsExhaustedStickyAtZeroWeeklyAndDoesNotUnset(t *testing.T) {
 		},
 	})
 	afterRecoveryData := secondUpdated.(Model)
-	if !afterRecoveryData.ExhaustedSticky["acc-1"] {
-		t.Fatalf("expected exhausted sticky to remain set after non-exhausted data")
+	if afterRecoveryData.ExhaustedSticky["acc-1"] {
+		t.Fatalf("expected exhausted sticky to be cleared after non-exhausted data")
 	}
 }
 
