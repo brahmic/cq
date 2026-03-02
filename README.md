@@ -13,19 +13,30 @@ A TUI for switching between Codex accounts and monitoring quota usage, written i
 - Two view modes: compact for many accounts, tabs for focused viewing when you have just a few.
 ## Installation
 
+Homebrew:
+
+```bash
+brew install deLiseLINO/tap/codex-quota
+```
+
+Go install:
+
 ```bash
 go install github.com/deLiseLINO/codex-quota/cmd/cq@latest
 ```
 
 **Note:** Make sure your Go bin directory is available in `PATH`.
 
-Build from source:
+<details>
+<summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/deLiseLINO/codex-quota.git
 cd codex-quota
 go install ./cmd/cq
 ```
+
+</details>
 
 ## Usage
 
