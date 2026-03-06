@@ -29,8 +29,14 @@ func ParseAccessToken(token string) AccessTokenClaims {
 	}
 
 	claims := AccessTokenClaims{
-		ClientID: strings.TrimSpace(asString(claimsMap["cid"])),
+		ClientID: strings.TrimSpace(asString(claimsMap["client_id"])),
 		Email:    strings.TrimSpace(asString(claimsMap["email"])),
+	}
+	if claims.ClientID == "" {
+		claims.ClientID = strings.TrimSpace(asString(claimsMap["cid"]))
+	}
+	if claims.ClientID == "" {
+		claims.ClientID = strings.TrimSpace(asString(claimsMap["clientId"]))
 	}
 
 	rawAuthAccountID := strings.TrimSpace(asString(claimsMap["https://api.openai.com/auth"]))

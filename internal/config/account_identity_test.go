@@ -36,6 +36,26 @@ func TestParseAccessToken_UsesNestedAuthObjectChatGPTAccountID(t *testing.T) {
 	}
 }
 
+func TestParseAccessToken_UsesClientIDClaim(t *testing.T) {
+	uuid := "98609d8a-85fb-4ff8-aee2-9344e68fbe3f"
+	exp := time.Now().Add(2 * time.Hour).Unix()
+
+	token := makeTestJWT(t, map[string]any{
+		"client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+		"email":     "user@example.com",
+		"sub":       "auth0|sub-id",
+		"exp":       exp,
+		"https://api.openai.com/auth": map[string]any{
+			"chatgpt_account_id": uuid,
+		},
+	})
+
+	claims := ParseAccessToken(token)
+	if claims.ClientID != "app_EMoamEEZ73f0CkXaXp7hrann" {
+		t.Fatalf("expected client id %q, got %q", "app_EMoamEEZ73f0CkXaXp7hrann", claims.ClientID)
+	}
+}
+
 func TestDedupeAccounts_MergesByAccountIDWhenEmailMissingOnOneSide(t *testing.T) {
 	accountID := "98609d8a-85fb-4ff8-aee2-9344e68fbe3f"
 	now := time.Now().UTC()
