@@ -48,6 +48,10 @@ var (
 	NoticeStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42"))
 
+	UpdateHintStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("39"))
+
 	InfoTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("39"))

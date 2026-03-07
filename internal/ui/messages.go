@@ -5,6 +5,7 @@ import (
 
 	"github.com/deLiseLINO/codex-quota/internal/api"
 	"github.com/deLiseLINO/codex-quota/internal/config"
+	"github.com/deLiseLINO/codex-quota/internal/update"
 )
 
 type DataMsg struct {
@@ -34,6 +35,11 @@ type NoticeMsg struct {
 
 type NoticeTimeoutMsg struct {
 	Seq int
+}
+
+type UpdateAvailableMsg struct {
+	Version string
+	Method  update.Method
 }
 
 type AnimationFrameMsg struct {

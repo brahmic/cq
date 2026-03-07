@@ -11,6 +11,10 @@ import (
 )
 
 func (m Model) currentOverlayModal() string {
+	if m.UpdatePromptVisible {
+		return m.renderUpdatePromptModal()
+	}
+
 	if m.ShowInfo {
 		return m.renderInfoModal()
 	}

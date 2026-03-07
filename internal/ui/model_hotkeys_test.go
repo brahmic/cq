@@ -117,36 +117,36 @@ func TestRefreshAllDoesNotSetNoticeModal(t *testing.T) {
 }
 
 func TestRefreshAllLoadsInListOrderNotActivePriority(t *testing.T) {
-	m := testModelForHotkeys(4)
-	m.ActiveAccountIx = 3 // focus on the last account
+	m := testModelForHotkeys(5)
+	m.ActiveAccountIx = 4 // focus on the last account
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 	got := updated.(Model)
 
-	if !got.LoadingMap["managed:1"] || !got.LoadingMap["managed:2"] {
-		t.Fatalf("expected first two accounts to be scheduled first, got loading map: %#v", got.LoadingMap)
+	if !got.LoadingMap["managed:1"] || !got.LoadingMap["managed:2"] || !got.LoadingMap["managed:3"] {
+		t.Fatalf("expected first three accounts to be scheduled first, got loading map: %#v", got.LoadingMap)
 	}
-	if got.LoadingMap["managed:4"] {
-		t.Fatalf("did not expect focused last account to be prioritized, got loading map: %#v", got.LoadingMap)
+	if got.LoadingMap["managed:4"] || got.LoadingMap["managed:5"] {
+		t.Fatalf("did not expect later accounts to be prioritized, got loading map: %#v", got.LoadingMap)
 	}
 }
 
 func TestRefreshAllInCompactLoadsByVisualOrderWithExhaustedBlock(t *testing.T) {
-	m := testModelForHotkeys(4)
+	m := testModelForHotkeys(6)
 	m.CompactMode = true
-	// visual order in compact should become: 1,3,2,4
+	// visual order in compact should become: 1,3,5,6,2,4
 	m.ExhaustedSticky["managed:2"] = true
 	m.ExhaustedSticky["managed:4"] = true
-	m.ActiveAccountIx = 3 // focused account should not be prioritized
+	m.ActiveAccountIx = 5 // focused account should not be prioritized
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 	got := updated.(Model)
 
-	if !got.LoadingMap["managed:1"] || !got.LoadingMap["managed:3"] {
-		t.Fatalf("expected first two compact visual accounts (1,3) to be scheduled, got loading map: %#v", got.LoadingMap)
+	if !got.LoadingMap["managed:1"] || !got.LoadingMap["managed:3"] || !got.LoadingMap["managed:5"] {
+		t.Fatalf("expected first three compact visual accounts (1,3,5) to be scheduled, got loading map: %#v", got.LoadingMap)
 	}
-	if got.LoadingMap["managed:2"] || got.LoadingMap["managed:4"] {
-		t.Fatalf("did not expect exhausted block accounts (2,4) to be scheduled first, got loading map: %#v", got.LoadingMap)
+	if got.LoadingMap["managed:6"] || got.LoadingMap["managed:2"] || got.LoadingMap["managed:4"] {
+		t.Fatalf("did not expect later visual or exhausted block accounts to be scheduled first, got loading map: %#v", got.LoadingMap)
 	}
 }
 
@@ -174,6 +174,57 @@ func TestCompactArrowNavigationFollowsVisualOrderWithExhaustedBlock(t *testing.T
 	gotUp := up.(Model)
 	if gotUp.ActiveAccountIx != 2 { // back to managed:3
 		t.Fatalf("expected previous compact item to be managed:3 (idx=2), got %d", gotUp.ActiveAccountIx)
+	}
+}
+
+func TestInitialModelInCompactStartsFromFirstVisibleNonExhaustedAccount(t *testing.T) {
+	accounts := []*config.Account{
+		{Key: "managed:1", Label: "user1@example.com", Email: "user1@example.com", AccountID: "acc-1", Source: config.SourceManaged, Writable: true},
+		{Key: "managed:2", Label: "user2@example.com", Email: "user2@example.com", AccountID: "acc-2", Source: config.SourceManaged, Writable: true},
+		{Key: "managed:3", Label: "user3@example.com", Email: "user3@example.com", AccountID: "acc-3", Source: config.SourceManaged, Writable: true},
+	}
+
+	m := InitialModelWithUIState(
+		accounts,
+		map[string][]string{},
+		map[string][]string{},
+		config.UIState{
+			CompactMode:          true,
+			ExhaustedAccountKeys: []string{"managed:1"},
+		},
+	)
+
+	if m.ActiveAccountIx != 1 {
+		t.Fatalf("ActiveAccountIx = %d, want 1", m.ActiveAccountIx)
+	}
+	if !m.LoadingMap["managed:2"] {
+		t.Fatalf("expected managed:2 to be queued for initial load, got loading map %#v", m.LoadingMap)
+	}
+	if m.LoadingMap["managed:1"] {
+		t.Fatalf("did not expect exhausted managed:1 to be initial active load, got loading map %#v", m.LoadingMap)
+	}
+}
+
+func TestAccountsMsgInCompactStartsFromFirstVisibleNonExhaustedAccount(t *testing.T) {
+	m := testModelForHotkeys(3)
+	m.CompactMode = true
+	m.ExhaustedSticky["managed:1"] = true
+	m.LoadingMap = map[string]bool{}
+
+	updated, _ := m.Update(AccountsMsg{
+		Accounts: []*config.Account{
+			{Key: "managed:1", Label: "user1@example.com", Email: "user1@example.com", AccountID: "acc-1", Source: config.SourceManaged, Writable: true},
+			{Key: "managed:2", Label: "user2@example.com", Email: "user2@example.com", AccountID: "acc-2", Source: config.SourceManaged, Writable: true},
+			{Key: "managed:3", Label: "user3@example.com", Email: "user3@example.com", AccountID: "acc-3", Source: config.SourceManaged, Writable: true},
+		},
+	})
+	got := updated.(Model)
+
+	if got.ActiveAccountIx != 1 {
+		t.Fatalf("ActiveAccountIx = %d, want 1", got.ActiveAccountIx)
+	}
+	if !got.LoadingMap["managed:2"] {
+		t.Fatalf("expected managed:2 to be queued for active load, got loading map %#v", got.LoadingMap)
 	}
 }
 

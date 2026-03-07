@@ -13,6 +13,7 @@ import (
 	"github.com/deLiseLINO/codex-quota/internal/api"
 	"github.com/deLiseLINO/codex-quota/internal/auth"
 	"github.com/deLiseLINO/codex-quota/internal/config"
+	"github.com/deLiseLINO/codex-quota/internal/update"
 )
 
 type Model struct {
@@ -48,6 +49,13 @@ type Model struct {
 	compactBarAnimations    map[string]compactBarAnimation
 	tabWindowAnimations     map[string]tabWindowAnimation
 	animationTicking        bool
+	UpdatePromptVisible     bool
+	UpdatePromptVersion     string
+	UpdatePromptMethod      update.Method
+	UpdatePromptCursor      int
+	UpdateAvailableHint     string
+	pendingUpdateMethod     update.Method
+	hasPendingUpdateMethod  bool
 }
 
 type compactBarAnimation struct {
@@ -80,11 +88,12 @@ func InitialModel(
 	activeSourcesByIdentity map[string][]string,
 	initialCompactMode bool,
 ) Model {
-	return InitialModelWithUIState(
+	return InitialModelWithStartupUpdate(
 		accounts,
 		sourcesByAccountID,
 		activeSourcesByIdentity,
 		config.UIState{CompactMode: initialCompactMode},
+		nil,
 	)
 }
 
@@ -93,6 +102,21 @@ func InitialModelWithUIState(
 	sourcesByAccountID map[string][]string,
 	activeSourcesByIdentity map[string][]string,
 	uiState config.UIState,
+) Model {
+	return InitialModelWithStartupUpdate(accounts, sourcesByAccountID, activeSourcesByIdentity, uiState, nil)
+}
+
+type StartupUpdatePrompt struct {
+	Version string
+	Method  update.Method
+}
+
+func InitialModelWithStartupUpdate(
+	accounts []*config.Account,
+	sourcesByAccountID map[string][]string,
+	activeSourcesByIdentity map[string][]string,
+	uiState config.UIState,
+	startupUpdate *StartupUpdatePrompt,
 ) Model {
 	defaultProgress := progress.New(
 		progress.WithDefaultGradient(),
@@ -119,8 +143,17 @@ func InitialModelWithUIState(
 		ExhaustedSticky:         make(map[string]bool),
 		compactBarAnimations:    make(map[string]compactBarAnimation),
 		tabWindowAnimations:     make(map[string]tabWindowAnimation),
+		UpdatePromptCursor:      0,
 	}
 	m.Accounts = accounts
+	if startupUpdate != nil {
+		version := strings.TrimSpace(startupUpdate.Version)
+		if version != "" && update.SupportsAutoUpdate(startupUpdate.Method) {
+			m.UpdatePromptVersion = version
+			m.UpdatePromptMethod = startupUpdate.Method
+			m.UpdatePromptVisible = true
+		}
+	}
 
 	for _, key := range uiState.ExhaustedAccountKeys {
 		key = strings.TrimSpace(key)
@@ -130,9 +163,10 @@ func InitialModelWithUIState(
 		m.ExhaustedSticky[key] = true
 	}
 	m.pruneExhaustedSticky()
+	m.normalizeActiveAccountForView("")
 
-	if len(m.Accounts) > 0 {
-		m.LoadingMap[m.Accounts[0].Key] = true
+	if account := m.activeAccount(); account != nil {
+		m.LoadingMap[account.Key] = true
 	}
 
 	return m
@@ -172,6 +206,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		keyStr := normalizeKey(msg.String())
 
+		if m.UpdatePromptVisible {
+			return m.handleUpdatePrompt(msg, keyStr)
+		}
 		if m.DeleteSourceSelect {
 			return m.handleDeleteSourceSelection(keyStr)
 		}
@@ -186,6 +223,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch keyStr {
+		case "u":
+			if m.UpdatePromptVersion == "" || !update.SupportsAutoUpdate(m.UpdatePromptMethod) {
+				return m, nil
+			}
+			m.UpdatePromptVisible = true
+			m.UpdatePromptCursor = 0
+			m.ShowInfo = false
+			m.Notice = ""
+			m.Err = nil
+			m.resetDeleteState()
+			m.resetApplyState()
+			return m, nil
+
 		case "x", "delete":
 			if len(m.Accounts) == 0 {
 				return m, nil
@@ -373,14 +423,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if msg.ActiveKey != "" {
-			for i, account := range m.Accounts {
-				if account != nil && account.Key == msg.ActiveKey {
-					m.ActiveAccountIx = i
-					break
-				}
-			}
-		}
+		m.normalizeActiveAccountForView(msg.ActiveKey)
 
 		m.Loading = true
 		m.Err = nil
@@ -512,6 +555,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resetDeleteState()
 		m.resetApplyState()
 		return m, nextCmd
+
+	case UpdateAvailableMsg:
+		version := strings.TrimSpace(msg.Version)
+		if version == "" {
+			return m, nil
+		}
+		if update.SupportsAutoUpdate(msg.Method) {
+			m.UpdatePromptMethod = msg.Method
+		}
+		if m.UpdatePromptVersion == "" || update.IsNewer(version, m.UpdatePromptVersion) {
+			m.UpdatePromptVersion = version
+		}
+		if update.SupportsAutoUpdate(m.UpdatePromptMethod) {
+			m.UpdateAvailableHint = "Update available • press u"
+		}
+		return m, nil
 
 	case progress.FrameMsg:
 		defaultModel, defaultCmd := m.defaultProgress.Update(msg)
@@ -891,6 +950,17 @@ func SaveUIStateSnapshotCmd(state config.UIState) tea.Cmd {
 	}
 }
 
+func DismissUpdateVersionCmd(version string) tea.Cmd {
+	return func() tea.Msg {
+		_ = config.SetDismissedUpdateVersion(version)
+		return nil
+	}
+}
+
+func (m Model) PendingUpdate() (update.Method, bool) {
+	return m.pendingUpdateMethod, m.hasPendingUpdateMethod
+}
+
 func cloneAccount(account *config.Account) *config.Account {
 	if account == nil {
 		return nil
@@ -1022,6 +1092,32 @@ func (m *Model) syncActiveAccount() {
 	m.Data = api.UsageData{}
 }
 
+func (m *Model) normalizeActiveAccountForView(activeKey string) {
+	activeKey = strings.TrimSpace(activeKey)
+	if len(m.Accounts) == 0 {
+		m.ActiveAccountIx = 0
+		return
+	}
+
+	if activeKey != "" {
+		for i, account := range m.Accounts {
+			if account != nil && account.Key == activeKey {
+				m.ActiveAccountIx = i
+				return
+			}
+		}
+	}
+
+	if m.CompactMode {
+		if order := m.compactVisualOrderIndices(); len(order) > 0 {
+			m.ActiveAccountIx = order[0]
+			return
+		}
+	}
+
+	m.ActiveAccountIx = 0
+}
+
 func (m *Model) fetchNextCmd() tea.Cmd {
 	if m.UsageData == nil {
 		m.UsageData = make(map[string]api.UsageData)
@@ -1033,7 +1129,7 @@ func (m *Model) fetchNextCmd() tea.Cmd {
 		m.ErrorsMap = make(map[string]error)
 	}
 
-	const maxConcurrentLoads = 2
+	const maxConcurrentLoads = 3
 	currentlyLoading := 0
 	for _, isLoading := range m.LoadingMap {
 		if isLoading {

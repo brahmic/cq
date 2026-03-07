@@ -88,6 +88,105 @@ func TestViewCentersContentInLargeViewport(t *testing.T) {
 	}
 }
 
+func TestViewHeaderHintKeepsVisibleGapFromTitle(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.Width = 180
+	model.Height = 40
+	model.UpdateAvailableHint = "Update available • press u"
+
+	out := ansi.Strip(model.View())
+	for _, line := range strings.Split(out, "\n") {
+		titlePos := strings.Index(line, "Codex Quota Monitor")
+		hintPos := strings.Index(line, "Update available")
+		if titlePos >= 0 && hintPos >= 0 {
+			titleEnd := titlePos + len("Codex Quota Monitor")
+			if hintPos-titleEnd < headerUpdateHintGap {
+				t.Fatalf("header hint gap = %d, want >= %d in line %q", hintPos-titleEnd, headerUpdateHintGap, line)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected title and hint on the same line in rendered output:\n%s", out)
+}
+
+func TestViewTabModeHintAddsBlankLineBeforeTabs(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.Width = 180
+	model.Height = 40
+	model.CompactMode = false
+	model.UpdateAvailableHint = "Update available • press u"
+
+	out := ansi.Strip(model.View())
+	lines := strings.Split(out, "\n")
+
+	titleIdx := -1
+	tabsIdx := -1
+	for i, line := range lines {
+		if titleIdx == -1 && strings.Contains(line, "Codex Quota Monitor") {
+			titleIdx = i
+		}
+		if tabsIdx == -1 && strings.Contains(line, "user@example.com") {
+			tabsIdx = i
+		}
+	}
+
+	if titleIdx == -1 || tabsIdx == -1 {
+		t.Fatalf("expected both title and tabs in output:\n%s", out)
+	}
+	if tabsIdx-titleIdx < 2 {
+		t.Fatalf("expected at least one blank line between header and tabs, got titleIdx=%d tabsIdx=%d\n%s", titleIdx, tabsIdx, out)
+	}
+}
+
+func TestViewTabModeAddsBlankLineBeforeTabsWithoutHint(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.Width = 180
+	model.Height = 40
+	model.CompactMode = false
+
+	out := ansi.Strip(model.View())
+	lines := strings.Split(out, "\n")
+
+	titleIdx := -1
+	tabsIdx := -1
+	for i, line := range lines {
+		if titleIdx == -1 && strings.Contains(line, "Codex Quota Monitor") {
+			titleIdx = i
+		}
+		if tabsIdx == -1 && strings.Contains(line, "user@example.com") {
+			tabsIdx = i
+		}
+	}
+
+	if titleIdx == -1 || tabsIdx == -1 {
+		t.Fatalf("expected both title and tabs in output:\n%s", out)
+	}
+	if tabsIdx-titleIdx < 2 {
+		t.Fatalf("expected at least one blank line between header and tabs without hint, got titleIdx=%d tabsIdx=%d\n%s", titleIdx, tabsIdx, out)
+	}
+}
+
 func TestViewTabModeLoadingRendersWeeklyOnlyForUnknownOrFreePlan(t *testing.T) {
 	model := testModelWithWindows([]api.QuotaWindow{
 		{

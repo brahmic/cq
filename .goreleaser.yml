@@ -15,7 +15,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w
+      - -s -w -X github.com/deLiseLINO/codex-quota/internal/version.buildVersion={{ .Version }}
 
 archives:
   - id: cq-archive
