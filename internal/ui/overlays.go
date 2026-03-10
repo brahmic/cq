@@ -282,7 +282,7 @@ func (m Model) renderHelpModal() string {
 		HelpSectionStyle.Render("Primary"),
 		renderHelpLine(primaryMove, "Move between accounts"),
 		renderHelpLine("Enter", "Open account menu"),
-		renderHelpLine("o", "Apply account"),
+		renderHelpLine("o", "Apply to Codex/OpenCode"),
 		renderHelpLine("r", "Refresh active account"),
 		renderHelpLine("R", "Refresh all accounts"),
 		renderHelpLine("?", "Open or close this help"),
@@ -311,6 +311,7 @@ func (m Model) renderActionMenuModal() string {
 	}
 	lines = append(lines, "")
 
+	labelWidth := actionMenuLabelWidth(sections)
 	index := 0
 	for sectionIx, section := range sections {
 		if strings.TrimSpace(section.Title) != "" {
@@ -323,7 +324,7 @@ func (m Model) renderActionMenuModal() string {
 				cursor = ">"
 				style = ActionMenuSelectedStyle
 			}
-			line := fmt.Sprintf("%s %d. %-20s %s", cursor, index+1, item.Label, item.Shortcut)
+			line := fmt.Sprintf("%s %d. %-*s %s", cursor, index+1, labelWidth, item.Label, item.Shortcut)
 			lines = append(lines, style.Render(line))
 			index++
 		}
@@ -335,7 +336,7 @@ func (m Model) renderActionMenuModal() string {
 	lines = append(lines, "")
 	lines = append(lines, ActionMenuHintStyle.Render("[↑/↓] Move   [enter] Select   [esc] Close"))
 
-	return InfoBoxStyle.Copy().Width(56).Render(strings.Join(lines, "\n"))
+	return InfoBoxStyle.Copy().Width(actionMenuModalWidth(lines)).Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) actionMenuSections() []actionMenuSection {
@@ -343,7 +344,7 @@ func (m Model) actionMenuSections() []actionMenuSection {
 		{
 			Title: "Current account",
 			Items: []actionMenuItem{
-				{ID: actionMenuApply, Label: "Apply account", Shortcut: "o"},
+				{ID: actionMenuApply, Label: "Apply to Codex/OpenCode", Shortcut: "o"},
 				{ID: actionMenuRefresh, Label: "Refresh quota", Shortcut: "r"},
 				{ID: actionMenuInfo, Label: "Account details", Shortcut: "i"},
 				{ID: actionMenuDelete, Label: "Delete account", Shortcut: "x"},
@@ -375,6 +376,28 @@ func (m Model) actionMenuItems() []actionMenuItem {
 		items = append(items, section.Items...)
 	}
 	return items
+}
+
+func actionMenuLabelWidth(sections []actionMenuSection) int {
+	width := 0
+	for _, section := range sections {
+		for _, item := range section.Items {
+			if w := ansi.StringWidth(item.Label); w > width {
+				width = w
+			}
+		}
+	}
+	return width
+}
+
+func actionMenuModalWidth(lines []string) int {
+	width := 56
+	for _, line := range lines {
+		if w := ansi.StringWidth(line) + 2; w > width {
+			width = w
+		}
+	}
+	return width
 }
 
 func boolText(value bool) string {

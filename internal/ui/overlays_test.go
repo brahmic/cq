@@ -60,7 +60,7 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	if !strings.Contains(out, "Refresh all accounts") {
 		t.Fatalf("expected refresh all guidance in help modal:\n%s", out)
 	}
-	if !strings.Contains(out, "o          Apply account") {
+	if !strings.Contains(out, "o          Apply to Codex/OpenCode") {
 		t.Fatalf("expected apply action in primary help:\n%s", out)
 	}
 	if strings.Contains(out, "Use the actions menu for secondary tasks") {
@@ -79,13 +79,13 @@ func TestRenderActionMenuModalListsPrimaryActions(t *testing.T) {
 	if !strings.Contains(out, "Current account") || !strings.Contains(out, "Global actions") {
 		t.Fatalf("expected grouped action menu sections:\n%s", out)
 	}
-	if !strings.Contains(out, "Apply account") || !strings.Contains(out, "Delete account") {
+	if !strings.Contains(out, "Apply to Codex/OpenCode") || !strings.Contains(out, "Delete account") {
 		t.Fatalf("expected account actions in menu:\n%s", out)
 	}
 	if !strings.Contains(out, "Refresh all") || !strings.Contains(out, "Switch view") || !strings.Contains(out, "Add account") {
 		t.Fatalf("expected global actions in menu:\n%s", out)
 	}
-	if !strings.Contains(out, "1. Apply account") || !strings.Contains(out, "5. Refresh all") {
+	if !strings.Contains(out, "1. Apply to Codex/OpenCode") || !strings.Contains(out, "5. Refresh all") {
 		t.Fatalf("expected sequential numbering across sections:\n%s", out)
 	}
 }
@@ -102,6 +102,38 @@ func TestRenderActionMenuModalShowsInstallUpdateInGlobalActions(t *testing.T) {
 	}
 	if !strings.Contains(out, "Global actions") {
 		t.Fatalf("expected global actions section in menu:\n%s", out)
+	}
+}
+
+func TestRenderActionMenuModalKeepsShortcutColumnAlignedForLongLabels(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+
+	out := ansi.Strip(m.renderActionMenuModal())
+	lines := strings.Split(out, "\n")
+
+	applyLine := ""
+	switchViewLine := ""
+	for _, line := range lines {
+		if strings.Contains(line, "Apply to Codex/OpenCode") {
+			applyLine = line
+		}
+		if strings.Contains(line, "Switch view") {
+			switchViewLine = line
+		}
+	}
+
+	if applyLine == "" || switchViewLine == "" {
+		t.Fatalf("expected both action lines in menu:\n%s", out)
+	}
+
+	applyShortcutPos := strings.LastIndex(applyLine, " o")
+	switchShortcutPos := strings.LastIndex(switchViewLine, " v")
+	if applyShortcutPos < 0 || switchShortcutPos < 0 {
+		t.Fatalf("expected aligned shortcut suffixes in menu:\n%s", out)
+	}
+	if applyShortcutPos != switchShortcutPos {
+		t.Fatalf("expected shortcut column alignment, got %d vs %d\n%s", applyShortcutPos, switchShortcutPos, out)
 	}
 }
 
