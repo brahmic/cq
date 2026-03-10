@@ -4,34 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/deLiseLINO/codex-quota/internal/config"
-	"github.com/deLiseLINO/codex-quota/internal/update"
 )
-
-const (
-	actionMenuApply      = "apply"
-	actionMenuRefresh    = "refresh"
-	actionMenuRefreshAll = "refresh_all"
-	actionMenuInfo       = "info"
-	actionMenuAdd        = "add"
-	actionMenuView       = "view"
-	actionMenuDelete     = "delete"
-	actionMenuUpdate     = "update"
-)
-
-type actionMenuItem struct {
-	ID       string
-	Label    string
-	Shortcut string
-}
-
-type actionMenuSection struct {
-	Title string
-	Items []actionMenuItem
-}
 
 func (m Model) currentOverlayModal() string {
 	if m.UpdatePromptVisible {
@@ -86,52 +60,6 @@ const (
 	messageModalMaxWidth = 104
 	messageModalInset    = 6
 )
-
-func renderMessageModal(title, message string, titleStyle lipgloss.Style, viewportWidth int) string {
-	message = strings.TrimSpace(message)
-	width := messageModalWidth(title, message, viewportWidth)
-	bodyWidth := width - 2 // account for InfoBoxStyle horizontal padding
-	if bodyWidth < 1 {
-		bodyWidth = 1
-	}
-	wrappedMessage := lipgloss.NewStyle().Width(bodyWidth).Render(message)
-	content := strings.Join([]string{
-		titleStyle.Render(title),
-		InfoValueStyle.Render(wrappedMessage),
-	}, "\n\n")
-	return InfoBoxStyle.Copy().Width(width).Render(content)
-}
-
-func messageModalWidth(title, message string, viewportWidth int) int {
-	target := messageModalMinWidth
-	for _, line := range strings.Split(strings.TrimSpace(message), "\n") {
-		width := ansi.StringWidth(line) + 2
-		if width > target {
-			target = width
-		}
-	}
-	if titleWidth := ansi.StringWidth(title) + 2; titleWidth > target {
-		target = titleWidth
-	}
-	if target > messageModalMaxWidth {
-		target = messageModalMaxWidth
-	}
-	if viewportWidth <= 0 {
-		return target
-	}
-
-	maxAllowed := viewportWidth - messageModalInset - 2 // border width
-	if maxAllowed <= 0 {
-		return messageModalMinWidth
-	}
-	if maxAllowed < messageModalMinWidth {
-		return maxAllowed
-	}
-	if target > maxAllowed {
-		return maxAllowed
-	}
-	return target
-}
 
 func (m Model) renderDeleteSourceModal() string {
 	lines := []string{
@@ -339,127 +267,9 @@ func (m Model) renderActionMenuModal() string {
 	return InfoBoxStyle.Copy().Width(actionMenuModalWidth(lines)).Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) actionMenuSections() []actionMenuSection {
-	sections := []actionMenuSection{
-		{
-			Title: "Current account",
-			Items: []actionMenuItem{
-				{ID: actionMenuApply, Label: "Apply to Codex/OpenCode", Shortcut: "o"},
-				{ID: actionMenuRefresh, Label: "Refresh quota", Shortcut: "r"},
-				{ID: actionMenuInfo, Label: "Account details", Shortcut: "i"},
-				{ID: actionMenuDelete, Label: "Delete account", Shortcut: "x"},
-			},
-		},
-		{
-			Title: "Global actions",
-			Items: []actionMenuItem{
-				{ID: actionMenuRefreshAll, Label: "Refresh all", Shortcut: "R"},
-				{ID: actionMenuAdd, Label: "Add account", Shortcut: "n"},
-				{ID: actionMenuView, Label: "Switch view", Shortcut: "v"},
-			},
-		},
-	}
-	if strings.TrimSpace(m.UpdatePromptVersion) != "" && update.SupportsAutoUpdate(m.UpdatePromptMethod) {
-		sections[1].Items = append(sections[1].Items, actionMenuItem{ID: actionMenuUpdate, Label: "Install update", Shortcut: "u"})
-	}
-	return sections
-}
-
-func (m Model) actionMenuItems() []actionMenuItem {
-	sections := m.actionMenuSections()
-	total := 0
-	for _, section := range sections {
-		total += len(section.Items)
-	}
-	items := make([]actionMenuItem, 0, total)
-	for _, section := range sections {
-		items = append(items, section.Items...)
-	}
-	return items
-}
-
-func actionMenuLabelWidth(sections []actionMenuSection) int {
-	width := 0
-	for _, section := range sections {
-		for _, item := range section.Items {
-			if w := ansi.StringWidth(item.Label); w > width {
-				width = w
-			}
-		}
-	}
-	return width
-}
-
-func actionMenuModalWidth(lines []string) int {
-	width := 56
-	for _, line := range lines {
-		if w := ansi.StringWidth(line) + 2; w > width {
-			width = w
-		}
-	}
-	return width
-}
-
 func boolText(value bool) string {
 	if value {
 		return "true"
 	}
 	return "false"
-}
-
-func overlayCenter(base, modal string, width, height int) string {
-	canvasWidth := width
-	if canvasWidth < lipgloss.Width(base) {
-		canvasWidth = lipgloss.Width(base)
-	}
-	if canvasWidth < lipgloss.Width(modal)+2 {
-		canvasWidth = lipgloss.Width(modal) + 2
-	}
-
-	canvasHeight := height
-	if canvasHeight < lipgloss.Height(base) {
-		canvasHeight = lipgloss.Height(base)
-	}
-	if canvasHeight < lipgloss.Height(modal)+2 {
-		canvasHeight = lipgloss.Height(modal) + 2
-	}
-
-	baseCanvas := lipgloss.Place(canvasWidth, canvasHeight, lipgloss.Left, lipgloss.Top, base)
-	baseLines := strings.Split(baseCanvas, "\n")
-	modalLines := strings.Split(modal, "\n")
-
-	modalWidth := lipgloss.Width(modal)
-	modalHeight := len(modalLines)
-	startX := (canvasWidth - modalWidth) / 2
-	if startX < 0 {
-		startX = 0
-	}
-	startY := (canvasHeight - modalHeight) / 2
-	if startY < 0 {
-		startY = 0
-	}
-
-	for i, modalLine := range modalLines {
-		y := startY + i
-		if y < 0 || y >= len(baseLines) {
-			continue
-		}
-
-		line := padANSI(baseLines[y], canvasWidth)
-		modalLine = padANSI(modalLine, modalWidth)
-
-		left := ansi.Cut(line, 0, startX)
-		right := ansi.Cut(line, startX+modalWidth, canvasWidth)
-		baseLines[y] = left + modalLine + right
-	}
-
-	return strings.Join(baseLines, "\n")
-}
-
-func padANSI(line string, targetWidth int) string {
-	currentWidth := ansi.StringWidth(line)
-	if currentWidth >= targetWidth {
-		return line
-	}
-	return line + strings.Repeat(" ", targetWidth-currentWidth)
 }

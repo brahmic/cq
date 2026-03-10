@@ -146,26 +146,3 @@ func lineRightEdge(line string) int {
 	plain := ansi.Strip(line)
 	return ansi.StringWidth(strings.TrimRight(plain, " "))
 }
-
-func splitFooterArea(view string, footerHeight int) (string, string) {
-	if footerHeight <= 0 {
-		return view, ""
-	}
-	lines := strings.Split(view, "\n")
-	if footerHeight >= len(lines) {
-		return view, ""
-	}
-	body := strings.Join(lines[:len(lines)-footerHeight], "\n")
-	footer := strings.Join(lines[len(lines)-footerHeight:], "\n")
-	return body, footer
-}
-
-func joinFooterArea(body, footer string) string {
-	if strings.TrimSpace(footer) == "" {
-		return body
-	}
-	if body == "" {
-		return footer
-	}
-	return body + "\n" + footer
-}
