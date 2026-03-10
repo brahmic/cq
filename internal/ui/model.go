@@ -30,6 +30,9 @@ type Model struct {
 	ApplyTargets            map[config.Source]bool
 	ApplyTargetCursor       int
 	ApplyConfirm            bool
+	HelpVisible             bool
+	ActionMenuVisible       bool
+	ActionMenuCursor        int
 	ShowInfo                bool
 	Notice                  string
 	noticeSeq               int
@@ -201,13 +204,32 @@ func normalizeKey(key string) string {
 	return key
 }
 
+func normalizeHelpKey(rawKey, normalizedKey string) string {
+	switch rawKey {
+	case "?", "/", ".", ",":
+		return "help"
+	}
+	switch normalizedKey {
+	case "?", "/", ".", ",":
+		return "help"
+	}
+	return normalizedKey
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		keyStr := normalizeKey(msg.String())
+		rawKey := msg.String()
+		keyStr := normalizeHelpKey(rawKey, normalizeKey(rawKey))
 
 		if m.UpdatePromptVisible {
 			return m.handleUpdatePrompt(msg, keyStr)
+		}
+		if m.HelpVisible {
+			return m.handleHelpOverlay(keyStr)
+		}
+		if m.ActionMenuVisible {
+			return m.handleActionMenu(keyStr)
 		}
 		if m.DeleteSourceSelect {
 			return m.handleDeleteSourceSelection(keyStr)
@@ -224,52 +246,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch keyStr {
 		case "u":
-			if m.UpdatePromptVersion == "" || !update.SupportsAutoUpdate(m.UpdatePromptMethod) {
+			if !m.openUpdatePrompt() {
 				return m, nil
 			}
-			m.UpdatePromptVisible = true
-			m.UpdatePromptCursor = 0
-			m.ShowInfo = false
-			m.Notice = ""
-			m.Err = nil
-			m.resetDeleteState()
-			m.resetApplyState()
+			return m, nil
+
+		case "help":
+			m.openHelpOverlay()
+			return m, nil
+
+		case "enter":
+			if m.activeAccount() == nil {
+				return m, nil
+			}
+			m.openActionMenu()
 			return m, nil
 
 		case "x", "delete":
-			if len(m.Accounts) == 0 {
-				return m, nil
-			}
-			account := m.activeAccount()
-			if account == nil {
-				return m, nil
-			}
-			if !account.Writable {
-				m.resetDeleteState()
-				m.resetApplyState()
-				m.ShowInfo = false
-				m.Err = nil
-				m.Notice = "cannot delete this account (read-only)"
-				m.noticeSeq++
-				return m, scheduleNoticeClearCmd(m.noticeSeq)
-			}
-
-			sources := m.deletableSourcesForAccount(account)
-			if len(sources) == 0 {
-				m.resetDeleteState()
-				m.resetApplyState()
-				m.ShowInfo = false
-				m.Err = nil
-				m.Notice = "cannot delete this account (no writable source found)"
-				m.noticeSeq++
-				return m, scheduleNoticeClearCmd(m.noticeSeq)
-			}
-
-			m.startDeleteFlow(sources)
-			m.ShowInfo = false
-			m.Err = nil
-			m.Notice = ""
-			return m, nil
+			return m.beginDeleteFlow()
 
 		case "esc":
 			if m.ShowInfo {
@@ -290,41 +284,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "r":
-			if m.activeAccount() == nil {
-				return m, nil
-			}
-			m.Loading = true
-			m.Err = nil
-			m.resetDeleteState()
-			m.resetApplyState()
-			m.Notice = ""
-
-			if m.LoadingMap == nil {
-				m.LoadingMap = make(map[string]bool)
-			}
-			delete(m.UsageData, m.activeAccountKey())
-			delete(m.ErrorsMap, m.activeAccountKey())
-			delete(m.compactBarAnimations, m.activeAccountKey())
-			m.clearTabWindowAnimations()
-			return m, m.fetchNextCmd()
+			return m.beginRefreshActive()
 
 		case "R":
-			m.Loading = true
-			m.Err = nil
-			m.resetDeleteState()
-			m.resetApplyState()
-			m.Notice = ""
-
-			m.UsageData = make(map[string]api.UsageData)
-			m.ErrorsMap = make(map[string]error)
-			m.LoadingMap = make(map[string]bool)
-			m.compactBarAnimations = make(map[string]compactBarAnimation)
-			m.tabWindowAnimations = make(map[string]tabWindowAnimation)
-			m.animationTicking = false
-
-			return m, m.fetchNextCmd()
+			return m.beginRefreshAll()
 
 		case "i":
+			m.resetHelpState()
+			m.resetActionMenuState()
 			m.ShowInfo = !m.ShowInfo
 			m.resetDeleteState()
 			m.resetApplyState()
@@ -332,36 +299,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "v", "c":
-			m.CompactMode = !m.CompactMode
-			if m.CompactMode {
-				m.clearTabWindowAnimations()
-			} else {
-				m.clearCompactBarAnimations()
-			}
-			m.resetDeleteState()
-			m.resetApplyState()
-			m.Notice = ""
-			return m, tea.Batch(m.fetchNextCmd(), m.ensureAnimationTickCmd(), SaveUIStateSnapshotCmd(m.uiStateSnapshot()))
+			return m.toggleViewMode()
 
 		case "n":
-			m.Loading = true
-			m.Err = nil
-			m.resetDeleteState()
-			m.resetApplyState()
-			m.ShowInfo = false
-			m.Notice = ""
-			return m, AddAccountCmd()
+			return m.beginAddAccount()
 
-		case "enter", "o":
-			if m.activeAccount() == nil {
-				return m, nil
-			}
-			m.resetDeleteState()
-			m.startApplyFlow()
-			m.ShowInfo = false
-			m.Notice = ""
-			m.Err = nil
-			return m, nil
+		case "o":
+			return m.beginApplyFlow()
 
 		case "right", "l", "down", "j":
 			if len(m.Accounts) > 1 {
@@ -594,6 +538,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleDeleteSourceSelection(keyStr string) (tea.Model, tea.Cmd) {
 	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
 	case "esc":
 		m.resetDeleteState()
 		return m, nil
@@ -633,8 +579,96 @@ func (m Model) handleDeleteSourceSelection(keyStr string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleHelpOverlay(keyStr string) (tea.Model, tea.Cmd) {
+	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc", "help":
+		m.resetHelpState()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) handleActionMenu(keyStr string) (tea.Model, tea.Cmd) {
+	items := m.actionMenuItems()
+	if len(items) == 0 {
+		m.resetActionMenuState()
+		return m, nil
+	}
+
+	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.resetActionMenuState()
+		return m, nil
+	case "up", "k":
+		m.ActionMenuCursor = (m.ActionMenuCursor - 1 + len(items)) % len(items)
+		return m, nil
+	case "down", "j":
+		m.ActionMenuCursor = (m.ActionMenuCursor + 1) % len(items)
+		return m, nil
+	case "enter":
+		return m.confirmActionMenu()
+	}
+
+	if len(keyStr) == 1 && keyStr[0] >= '1' && keyStr[0] <= '9' {
+		index := int(keyStr[0] - '1')
+		if index >= 0 && index < len(items) {
+			m.ActionMenuCursor = index
+			return m.confirmActionMenu()
+		}
+	}
+
+	return m, nil
+}
+
+func (m Model) confirmActionMenu() (tea.Model, tea.Cmd) {
+	items := m.actionMenuItems()
+	if len(items) == 0 {
+		m.resetActionMenuState()
+		return m, nil
+	}
+	if m.ActionMenuCursor < 0 || m.ActionMenuCursor >= len(items) {
+		m.ActionMenuCursor = 0
+	}
+
+	selected := items[m.ActionMenuCursor]
+	m.resetActionMenuState()
+
+	switch selected.ID {
+	case actionMenuApply:
+		return m.beginApplyFlow()
+	case actionMenuRefresh:
+		return m.beginRefreshActive()
+	case actionMenuRefreshAll:
+		return m.beginRefreshAll()
+	case actionMenuInfo:
+		m.ShowInfo = true
+		m.Notice = ""
+		m.Err = nil
+		return m, nil
+	case actionMenuAdd:
+		return m.beginAddAccount()
+	case actionMenuView:
+		return m.toggleViewMode()
+	case actionMenuDelete:
+		return m.beginDeleteFlow()
+	case actionMenuUpdate:
+		if !m.openUpdatePrompt() {
+			return m, nil
+		}
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
 func (m Model) handleDeleteConfirm(keyStr string) (tea.Model, tea.Cmd) {
 	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
 	case "esc":
 		m.resetDeleteState()
 		return m, nil
@@ -668,6 +702,8 @@ func (m Model) handleDeleteConfirm(keyStr string) (tea.Model, tea.Cmd) {
 
 func (m Model) handleApplyTargetSelection(keyStr string) (tea.Model, tea.Cmd) {
 	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
 	case "esc":
 		m.resetApplyState()
 		return m, nil
@@ -705,6 +741,8 @@ func (m Model) handleApplyTargetSelection(keyStr string) (tea.Model, tea.Cmd) {
 
 func (m Model) handleApplyConfirm(keyStr string) (tea.Model, tea.Cmd) {
 	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
 	case "esc":
 		m.resetApplyState()
 		return m, nil
@@ -937,6 +975,176 @@ func animationTickCmd() tea.Cmd {
 	return tea.Tick(animationFrameInterval, func(now time.Time) tea.Msg {
 		return AnimationFrameMsg{Now: now}
 	})
+}
+
+func (m *Model) openHelpOverlay() {
+	m.resetActionMenuState()
+	m.resetDeleteState()
+	m.resetApplyState()
+	m.ShowInfo = false
+	m.Notice = ""
+	m.Err = nil
+	m.HelpVisible = true
+}
+
+func (m *Model) resetHelpState() {
+	m.HelpVisible = false
+}
+
+func (m *Model) openActionMenu() {
+	m.resetHelpState()
+	m.resetDeleteState()
+	m.resetApplyState()
+	m.ShowInfo = false
+	m.Notice = ""
+	m.Err = nil
+	m.ActionMenuVisible = true
+	m.ActionMenuCursor = 0
+}
+
+func (m *Model) resetActionMenuState() {
+	m.ActionMenuVisible = false
+	m.ActionMenuCursor = 0
+}
+
+func (m *Model) openUpdatePrompt() bool {
+	if m.UpdatePromptVersion == "" || !update.SupportsAutoUpdate(m.UpdatePromptMethod) {
+		return false
+	}
+	m.UpdatePromptVisible = true
+	m.UpdatePromptCursor = 0
+	m.resetHelpState()
+	m.resetActionMenuState()
+	m.ShowInfo = false
+	m.Notice = ""
+	m.Err = nil
+	m.resetDeleteState()
+	m.resetApplyState()
+	return true
+}
+
+func (m Model) beginDeleteFlow() (tea.Model, tea.Cmd) {
+	if len(m.Accounts) == 0 {
+		return m, nil
+	}
+	account := m.activeAccount()
+	if account == nil {
+		return m, nil
+	}
+	if !account.Writable {
+		m.resetActionMenuState()
+		m.resetHelpState()
+		m.resetDeleteState()
+		m.resetApplyState()
+		m.ShowInfo = false
+		m.Err = nil
+		m.Notice = "cannot delete this account (read-only)"
+		m.noticeSeq++
+		return m, scheduleNoticeClearCmd(m.noticeSeq)
+	}
+
+	sources := m.deletableSourcesForAccount(account)
+	if len(sources) == 0 {
+		m.resetActionMenuState()
+		m.resetHelpState()
+		m.resetDeleteState()
+		m.resetApplyState()
+		m.ShowInfo = false
+		m.Err = nil
+		m.Notice = "cannot delete this account (no writable source found)"
+		m.noticeSeq++
+		return m, scheduleNoticeClearCmd(m.noticeSeq)
+	}
+
+	m.resetActionMenuState()
+	m.resetHelpState()
+	m.startDeleteFlow(sources)
+	m.ShowInfo = false
+	m.Err = nil
+	m.Notice = ""
+	return m, nil
+}
+
+func (m Model) beginRefreshActive() (tea.Model, tea.Cmd) {
+	if m.activeAccount() == nil {
+		return m, nil
+	}
+	m.Loading = true
+	m.Err = nil
+	m.resetHelpState()
+	m.resetActionMenuState()
+	m.resetDeleteState()
+	m.resetApplyState()
+	m.Notice = ""
+
+	if m.LoadingMap == nil {
+		m.LoadingMap = make(map[string]bool)
+	}
+	delete(m.UsageData, m.activeAccountKey())
+	delete(m.ErrorsMap, m.activeAccountKey())
+	delete(m.compactBarAnimations, m.activeAccountKey())
+	m.clearTabWindowAnimations()
+	return m, m.fetchNextCmd()
+}
+
+func (m Model) beginRefreshAll() (tea.Model, tea.Cmd) {
+	m.Loading = true
+	m.Err = nil
+	m.resetHelpState()
+	m.resetActionMenuState()
+	m.resetDeleteState()
+	m.resetApplyState()
+	m.Notice = ""
+
+	m.UsageData = make(map[string]api.UsageData)
+	m.ErrorsMap = make(map[string]error)
+	m.LoadingMap = make(map[string]bool)
+	m.compactBarAnimations = make(map[string]compactBarAnimation)
+	m.tabWindowAnimations = make(map[string]tabWindowAnimation)
+	m.animationTicking = false
+
+	return m, m.fetchNextCmd()
+}
+
+func (m Model) toggleViewMode() (tea.Model, tea.Cmd) {
+	m.CompactMode = !m.CompactMode
+	if m.CompactMode {
+		m.clearTabWindowAnimations()
+	} else {
+		m.clearCompactBarAnimations()
+	}
+	m.resetHelpState()
+	m.resetActionMenuState()
+	m.resetDeleteState()
+	m.resetApplyState()
+	m.Notice = ""
+	return m, tea.Batch(m.fetchNextCmd(), m.ensureAnimationTickCmd(), SaveUIStateSnapshotCmd(m.uiStateSnapshot()))
+}
+
+func (m Model) beginAddAccount() (tea.Model, tea.Cmd) {
+	m.Loading = true
+	m.Err = nil
+	m.resetHelpState()
+	m.resetActionMenuState()
+	m.resetDeleteState()
+	m.resetApplyState()
+	m.ShowInfo = false
+	m.Notice = ""
+	return m, AddAccountCmd()
+}
+
+func (m Model) beginApplyFlow() (tea.Model, tea.Cmd) {
+	if m.activeAccount() == nil {
+		return m, nil
+	}
+	m.resetHelpState()
+	m.resetActionMenuState()
+	m.resetDeleteState()
+	m.startApplyFlow()
+	m.ShowInfo = false
+	m.Notice = ""
+	m.Err = nil
+	return m, nil
 }
 
 func SaveUIStateCmd(compact bool) tea.Cmd {

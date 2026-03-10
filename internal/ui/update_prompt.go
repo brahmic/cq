@@ -25,6 +25,8 @@ const (
 
 func (m Model) handleUpdatePrompt(msg tea.KeyMsg, keyStr string) (tea.Model, tea.Cmd) {
 	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
 	case "up", "k":
 		m.UpdatePromptCursor = (m.UpdatePromptCursor - 1 + updatePromptChoiceCount) % updatePromptChoiceCount
 		return m, nil
@@ -44,11 +46,6 @@ func (m Model) handleUpdatePrompt(msg tea.KeyMsg, keyStr string) (tea.Model, tea
 		m.UpdatePromptCursor = updatePromptChoiceSkip
 		return m.confirmUpdatePrompt()
 	case "enter":
-		return m.confirmUpdatePrompt()
-	}
-
-	if msg.Type == tea.KeyCtrlC {
-		m.UpdatePromptCursor = updatePromptChoiceSkip
 		return m.confirmUpdatePrompt()
 	}
 

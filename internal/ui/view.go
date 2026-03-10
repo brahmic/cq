@@ -11,6 +11,7 @@ const headerUpdateHintGap = 6
 
 func (m Model) View() string {
 	var s strings.Builder
+	modal := m.currentOverlayModal()
 
 	s.WriteString(m.renderHeader())
 	s.WriteString("\n")
@@ -36,8 +37,8 @@ func (m Model) View() string {
 		}
 	}
 
-	footer := "[r] refresh • [R] refresh all • [i] info • [n] add • [enter/o] apply • [x] del • [v] view • [↑↓←→] switch • [q] quit"
-	s.WriteString(HelpStyle.Render("\n" + footer))
+	footer := HelpStyle.Render("\n" + m.renderFooter())
+	s.WriteString(footer)
 
 	content := s.String()
 	contentWidth := lipgloss.Width(content)
@@ -54,8 +55,9 @@ func (m Model) View() string {
 	baseView := containerStyle.Render(content)
 	baseView = m.overlayUpdateHint(baseView)
 
-	if modal := m.currentOverlayModal(); modal != "" {
-		return overlayCenter(baseView, modal, m.Width, m.Height)
+	if modal != "" {
+		body, footerArea := splitFooterArea(baseView, lipgloss.Height(footer))
+		return joinFooterArea(overlayCenter(body, modal, m.Width, m.Height-lipgloss.Height(footer)), footerArea)
 	}
 
 	return baseView
@@ -63,6 +65,13 @@ func (m Model) View() string {
 
 func (m Model) renderHeader() string {
 	return TitleStyle.Render("🚀 Codex Quota Monitor")
+}
+
+func (m Model) renderFooter() string {
+	if m.CompactMode {
+		return "↑↓ Move • Enter Menu • ? Help • q Quit"
+	}
+	return "←→ Move • Enter Menu • ? Help • q Quit"
 }
 
 func (m Model) overlayUpdateHint(base string) string {
@@ -136,4 +145,27 @@ func firstNonEmptyLine(lines []string) int {
 func lineRightEdge(line string) int {
 	plain := ansi.Strip(line)
 	return ansi.StringWidth(strings.TrimRight(plain, " "))
+}
+
+func splitFooterArea(view string, footerHeight int) (string, string) {
+	if footerHeight <= 0 {
+		return view, ""
+	}
+	lines := strings.Split(view, "\n")
+	if footerHeight >= len(lines) {
+		return view, ""
+	}
+	body := strings.Join(lines[:len(lines)-footerHeight], "\n")
+	footer := strings.Join(lines[len(lines)-footerHeight:], "\n")
+	return body, footer
+}
+
+func joinFooterArea(body, footer string) string {
+	if strings.TrimSpace(footer) == "" {
+		return body
+	}
+	if body == "" {
+		return footer
+	}
+	return body + "\n" + footer
 }

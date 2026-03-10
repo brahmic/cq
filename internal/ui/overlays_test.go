@@ -41,6 +41,70 @@ func TestRenderMessageModalKeepsShortNoticeCompact(t *testing.T) {
 	}
 }
 
+func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
+	m := testModelForHotkeys(1)
+
+	out := ansi.Strip(m.renderHelpModal())
+	if !strings.Contains(out, "Keyboard help") {
+		t.Fatalf("expected help title in modal:\n%s", out)
+	}
+	if !strings.Contains(out, "Primary") {
+		t.Fatalf("expected primary section in help modal:\n%s", out)
+	}
+	if strings.Contains(out, "Actions menu") || strings.Contains(out, "Aliases") || strings.Contains(out, "Modal controls") {
+		t.Fatalf("did not expect removed sections in help modal:\n%s", out)
+	}
+	if !strings.Contains(out, "Open account menu") {
+		t.Fatalf("expected menu guidance in help modal:\n%s", out)
+	}
+	if !strings.Contains(out, "Refresh all accounts") {
+		t.Fatalf("expected refresh all guidance in help modal:\n%s", out)
+	}
+	if !strings.Contains(out, "o          Apply account") {
+		t.Fatalf("expected apply action in primary help:\n%s", out)
+	}
+	if strings.Contains(out, "Use the actions menu for secondary tasks") {
+		t.Fatalf("did not expect explanatory note in help modal:\n%s", out)
+	}
+}
+
+func TestRenderActionMenuModalListsPrimaryActions(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+
+	out := ansi.Strip(m.renderActionMenuModal())
+	if !strings.Contains(out, "Account actions") {
+		t.Fatalf("expected action menu title:\n%s", out)
+	}
+	if !strings.Contains(out, "Current account") || !strings.Contains(out, "Global actions") {
+		t.Fatalf("expected grouped action menu sections:\n%s", out)
+	}
+	if !strings.Contains(out, "Apply account") || !strings.Contains(out, "Delete account") {
+		t.Fatalf("expected account actions in menu:\n%s", out)
+	}
+	if !strings.Contains(out, "Refresh all") || !strings.Contains(out, "Switch view") || !strings.Contains(out, "Add account") {
+		t.Fatalf("expected global actions in menu:\n%s", out)
+	}
+	if !strings.Contains(out, "1. Apply account") || !strings.Contains(out, "5. Refresh all") {
+		t.Fatalf("expected sequential numbering across sections:\n%s", out)
+	}
+}
+
+func TestRenderActionMenuModalShowsInstallUpdateInGlobalActions(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+	m.UpdatePromptVersion = "1.2.3"
+	m.UpdatePromptMethod = "brew"
+
+	out := ansi.Strip(m.renderActionMenuModal())
+	if !strings.Contains(out, "Install update") {
+		t.Fatalf("expected install update action in menu:\n%s", out)
+	}
+	if !strings.Contains(out, "Global actions") {
+		t.Fatalf("expected global actions section in menu:\n%s", out)
+	}
+}
+
 func maxOverlayLineWidth(s string) int {
 	maxWidth := 0
 	for _, line := range strings.Split(s, "\n") {

@@ -48,19 +48,17 @@ func TestInitialModelUsesPersistedCompactMode(t *testing.T) {
 	}
 }
 
-func TestEnterOpensApplyFlowOnMainScreen(t *testing.T) {
+func TestEnterOpensActionMenuOnMainScreen(t *testing.T) {
 	m := testModelForHotkeys(2)
-	m.ApplyTargetSelect = false
-	m.ApplyConfirm = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(Model)
 
-	if !got.ApplyTargetSelect {
-		t.Fatalf("expected apply target selection to open on enter")
+	if !got.ActionMenuVisible {
+		t.Fatalf("expected action menu to open on enter")
 	}
-	if got.ApplyConfirm {
-		t.Fatalf("did not expect apply confirm to be set immediately")
+	if got.ApplyTargetSelect || got.ApplyConfirm {
+		t.Fatalf("did not expect apply flow to open directly on enter")
 	}
 }
 
@@ -80,6 +78,154 @@ func TestEnterInApplySelectionKeepsModalSemantics(t *testing.T) {
 	}
 	if !got.ApplyConfirm {
 		t.Fatalf("expected apply confirm step to open on enter")
+	}
+}
+
+func TestQuestionMarkOpensHelpOverlay(t *testing.T) {
+	m := testModelForHotkeys(1)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	got := updated.(Model)
+
+	if !got.HelpVisible {
+		t.Fatalf("expected help overlay to open")
+	}
+	if got.ActionMenuVisible {
+		t.Fatalf("did not expect action menu to open")
+	}
+}
+
+func TestApplyHotkeyOpensApplyFlow(t *testing.T) {
+	m := testModelForHotkeys(1)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	got := updated.(Model)
+
+	if !got.ApplyTargetSelect {
+		t.Fatalf("expected apply flow to open on o")
+	}
+	if got.ActionMenuVisible {
+		t.Fatalf("did not expect action menu to open")
+	}
+}
+
+func TestActionMenuApplyOpensApplyFlow(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+	m.ActionMenuCursor = 0
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+
+	if !got.ApplyTargetSelect {
+		t.Fatalf("expected apply flow to open from action menu")
+	}
+	if got.ActionMenuVisible {
+		t.Fatalf("expected action menu to close after selection")
+	}
+}
+
+func TestActionMenuRefreshAllTriggersBulkRefresh(t *testing.T) {
+	m := testModelForHotkeys(3)
+	m.ActionMenuVisible = true
+	m.ActionMenuCursor = 4 // first item in Global actions
+	m.Notice = "old notice"
+	m.UsageData["managed:1"] = api.UsageData{Allowed: true}
+	m.ErrorsMap["managed:1"] = nil
+	m.LoadingMap["managed:1"] = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+
+	if got.ActionMenuVisible {
+		t.Fatalf("expected action menu to close after refresh all")
+	}
+	if got.Notice != "" {
+		t.Fatalf("expected no notice for refresh-all, got %q", got.Notice)
+	}
+	if len(got.UsageData) != 0 {
+		t.Fatalf("expected usage cache reset, got %d entries", len(got.UsageData))
+	}
+	if len(got.LoadingMap) != 3 {
+		t.Fatalf("expected three loading accounts scheduled, got %d entries", len(got.LoadingMap))
+	}
+}
+
+func TestHelpAliasesOpenHelpOverlay(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  tea.KeyMsg
+	}{
+		{name: "question mark", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}},
+		{name: "dot alias", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'.'}}},
+		{name: "comma alias", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}}},
+		{name: "russian yu", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'ю'}}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModelForHotkeys(1)
+
+			updated, _ := m.Update(tc.msg)
+			got := updated.(Model)
+
+			if !got.HelpVisible {
+				t.Fatalf("expected help overlay to open for %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestQQuitsFromHelpOverlay(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.HelpVisible = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if _, ok := updated.(Model); !ok {
+		t.Fatalf("expected model to remain valid")
+	}
+	if cmd == nil {
+		t.Fatalf("expected quit command from help overlay")
+	}
+}
+
+func TestQQuitsFromActionMenu(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if _, ok := updated.(Model); !ok {
+		t.Fatalf("expected model to remain valid")
+	}
+	if cmd == nil {
+		t.Fatalf("expected quit command from action menu")
+	}
+}
+
+func TestQQuitsFromApplyModal(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if _, ok := updated.(Model); !ok {
+		t.Fatalf("expected model to remain valid")
+	}
+	if cmd == nil {
+		t.Fatalf("expected quit command from apply modal")
+	}
+}
+
+func TestQQuitsFromUpdatePrompt(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.UpdatePromptVisible = true
+	m.UpdatePromptVersion = "1.2.3"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if _, ok := updated.(Model); !ok {
+		t.Fatalf("expected model to remain valid")
+	}
+	if cmd == nil {
+		t.Fatalf("expected quit command from update prompt")
 	}
 }
 

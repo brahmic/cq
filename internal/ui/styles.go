@@ -39,6 +39,28 @@ var (
 			Foreground(lipgloss.Color("241")).
 			MarginTop(1)
 
+	HelpKeyStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("39"))
+
+	HelpSectionStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("252"))
+
+	ActionMenuTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("39"))
+
+	ActionMenuSelectedStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("255"))
+
+	ActionMenuItemStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252"))
+
+	ActionMenuHintStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("244"))
+
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("196"))
 

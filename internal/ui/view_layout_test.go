@@ -259,6 +259,154 @@ func TestViewTabModeLoadingRenders5HourForKnownSubscription(t *testing.T) {
 	}
 }
 
+func TestViewUsesCompactFooterOnMainScreen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+
+	out := ansi.Strip(model.View())
+	if !strings.Contains(out, "←→ Move") || !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
+		t.Fatalf("expected compact footer with primary actions:\n%s", out)
+	}
+	if strings.Contains(out, "r Refresh") || strings.Contains(out, "R All") {
+		t.Fatalf("did not expect refresh hints in footer:\n%s", out)
+	}
+	if strings.Contains(out, "o Apply") {
+		t.Fatalf("did not expect apply shortcut in footer:\n%s", out)
+	}
+	if strings.Contains(out, "[enter/o] apply") {
+		t.Fatalf("did not expect legacy verbose footer:\n%s", out)
+	}
+}
+
+func TestViewUsesCompactModeSpecificFooter(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.CompactMode = true
+
+	out := ansi.Strip(model.View())
+	if !strings.Contains(out, "↑↓ Move") || strings.Contains(out, "←→ Move") {
+		t.Fatalf("expected compact-mode footer navigation hint:\n%s", out)
+	}
+	if !strings.Contains(out, "Enter Menu") {
+		t.Fatalf("expected compact-mode footer actions:\n%s", out)
+	}
+	if strings.Contains(out, "r Refresh") || strings.Contains(out, "R All") {
+		t.Fatalf("did not expect refresh hints in compact footer:\n%s", out)
+	}
+}
+
+func TestViewKeepsFooterWhenHelpOverlayIsOpen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.HelpVisible = true
+
+	out := ansi.Strip(model.View())
+	if !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
+		t.Fatalf("expected footer to remain visible behind help overlay:\n%s", out)
+	}
+	if !strings.Contains(out, "Keyboard help") {
+		t.Fatalf("expected help overlay content:\n%s", out)
+	}
+}
+
+func TestViewKeepsFooterWhenActionMenuIsOpen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.ActionMenuVisible = true
+
+	out := ansi.Strip(model.View())
+	if !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
+		t.Fatalf("expected footer to remain visible behind action menu:\n%s", out)
+	}
+	if !strings.Contains(out, "Account actions") {
+		t.Fatalf("expected action menu overlay content:\n%s", out)
+	}
+}
+
+func TestViewKeepsFooterWhenApplyModalIsOpen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.startApplyFlow()
+
+	out := ansi.Strip(model.View())
+	if !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
+		t.Fatalf("expected footer to remain visible behind apply modal:\n%s", out)
+	}
+	if !strings.Contains(out, "Select targets to apply") {
+		t.Fatalf("expected apply modal content:\n%s", out)
+	}
+}
+
+func TestViewKeepsFooterWhenDeleteModalIsOpen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.startDeleteFlow([]config.Source{config.SourceManaged, config.SourceCodex})
+
+	out := ansi.Strip(model.View())
+	if !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
+		t.Fatalf("expected footer to remain visible behind delete modal:\n%s", out)
+	}
+	if !strings.Contains(out, "Delete account") {
+		t.Fatalf("expected delete modal content:\n%s", out)
+	}
+}
+
+func TestViewKeepsFooterWhenNoticeIsOpen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 30.0,
+			ResetAt:     time.Now().Add(2 * time.Hour),
+		},
+	})
+	model.Notice = "saved"
+
+	out := ansi.Strip(model.View())
+	if !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
+		t.Fatalf("expected footer to remain visible behind notice modal:\n%s", out)
+	}
+	if !strings.Contains(out, "saved") {
+		t.Fatalf("expected notice modal content:\n%s", out)
+	}
+}
+
 func TestRenderCompactView_MixedRowsStayAligned(t *testing.T) {
 	model := testModelWithWindows([]api.QuotaWindow{
 		{

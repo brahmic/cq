@@ -8,11 +8,42 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/deLiseLINO/codex-quota/internal/config"
+	"github.com/deLiseLINO/codex-quota/internal/update"
 )
+
+const (
+	actionMenuApply      = "apply"
+	actionMenuRefresh    = "refresh"
+	actionMenuRefreshAll = "refresh_all"
+	actionMenuInfo       = "info"
+	actionMenuAdd        = "add"
+	actionMenuView       = "view"
+	actionMenuDelete     = "delete"
+	actionMenuUpdate     = "update"
+)
+
+type actionMenuItem struct {
+	ID       string
+	Label    string
+	Shortcut string
+}
+
+type actionMenuSection struct {
+	Title string
+	Items []actionMenuItem
+}
 
 func (m Model) currentOverlayModal() string {
 	if m.UpdatePromptVisible {
 		return m.renderUpdatePromptModal()
+	}
+
+	if m.HelpVisible {
+		return m.renderHelpModal()
+	}
+
+	if m.ActionMenuVisible {
+		return m.renderActionMenuModal()
 	}
 
 	if m.ShowInfo {
@@ -237,6 +268,113 @@ func (m Model) renderInfoModal() string {
 
 	content := strings.Join(lines, "\n")
 	return InfoBoxStyle.Copy().Width(60).Render(content)
+}
+
+func (m Model) renderHelpModal() string {
+	primaryMove := "←/→"
+	if m.CompactMode {
+		primaryMove = "↑/↓"
+	}
+
+	lines := []string{
+		InfoTitleStyle.Render("Keyboard help"),
+		"",
+		HelpSectionStyle.Render("Primary"),
+		renderHelpLine(primaryMove, "Move between accounts"),
+		renderHelpLine("Enter", "Open account menu"),
+		renderHelpLine("o", "Apply account"),
+		renderHelpLine("r", "Refresh active account"),
+		renderHelpLine("R", "Refresh all accounts"),
+		renderHelpLine("?", "Open or close this help"),
+		renderHelpLine("q", "Quit"),
+		"",
+	}
+	return InfoBoxStyle.Copy().Width(56).Render(strings.Join(lines, "\n"))
+}
+
+func renderHelpLine(key, description string) string {
+	return fmt.Sprintf("%s %s", HelpKeyStyle.Render(fmt.Sprintf("%-10s", key)), InfoValueStyle.Render(description))
+}
+
+func (m Model) renderActionMenuModal() string {
+	sections := m.actionMenuSections()
+	lines := []string{
+		ActionMenuTitleStyle.Render("Account actions"),
+	}
+
+	if account := m.activeAccount(); account != nil {
+		label := account.Label
+		if strings.TrimSpace(label) == "" {
+			label = account.SourceLabel()
+		}
+		lines = append(lines, InfoValueStyle.Render(truncateLabel(label, 44)))
+	}
+	lines = append(lines, "")
+
+	index := 0
+	for sectionIx, section := range sections {
+		if strings.TrimSpace(section.Title) != "" {
+			lines = append(lines, HelpSectionStyle.Render(section.Title))
+		}
+		for _, item := range section.Items {
+			cursor := " "
+			style := ActionMenuItemStyle
+			if index == m.ActionMenuCursor {
+				cursor = ">"
+				style = ActionMenuSelectedStyle
+			}
+			line := fmt.Sprintf("%s %d. %-20s %s", cursor, index+1, item.Label, item.Shortcut)
+			lines = append(lines, style.Render(line))
+			index++
+		}
+		if sectionIx < len(sections)-1 {
+			lines = append(lines, "")
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, ActionMenuHintStyle.Render("[↑/↓] Move   [enter] Select   [esc] Close"))
+
+	return InfoBoxStyle.Copy().Width(56).Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) actionMenuSections() []actionMenuSection {
+	sections := []actionMenuSection{
+		{
+			Title: "Current account",
+			Items: []actionMenuItem{
+				{ID: actionMenuApply, Label: "Apply account", Shortcut: "o"},
+				{ID: actionMenuRefresh, Label: "Refresh quota", Shortcut: "r"},
+				{ID: actionMenuInfo, Label: "Account details", Shortcut: "i"},
+				{ID: actionMenuDelete, Label: "Delete account", Shortcut: "x"},
+			},
+		},
+		{
+			Title: "Global actions",
+			Items: []actionMenuItem{
+				{ID: actionMenuRefreshAll, Label: "Refresh all", Shortcut: "R"},
+				{ID: actionMenuAdd, Label: "Add account", Shortcut: "n"},
+				{ID: actionMenuView, Label: "Switch view", Shortcut: "v"},
+			},
+		},
+	}
+	if strings.TrimSpace(m.UpdatePromptVersion) != "" && update.SupportsAutoUpdate(m.UpdatePromptMethod) {
+		sections[1].Items = append(sections[1].Items, actionMenuItem{ID: actionMenuUpdate, Label: "Install update", Shortcut: "u"})
+	}
+	return sections
+}
+
+func (m Model) actionMenuItems() []actionMenuItem {
+	sections := m.actionMenuSections()
+	total := 0
+	for _, section := range sections {
+		total += len(section.Items)
+	}
+	items := make([]actionMenuItem, 0, total)
+	for _, section := range sections {
+		items = append(items, section.Items...)
+	}
+	return items
 }
 
 func boolText(value bool) string {
