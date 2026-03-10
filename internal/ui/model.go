@@ -152,7 +152,7 @@ func InitialModelWithStartupUpdate(
 }
 
 func (m Model) Init() tea.Cmd {
-	titleCmd := tea.SetWindowTitle("🚀 Codex Quota Monitor")
+	titleCmd := tea.SetWindowTitle("🚀 Codex Quota")
 	if account := m.activeAccount(); account != nil {
 		return tea.Batch(titleCmd, FetchDataCmd(account), m.fetchNextCmd())
 	}

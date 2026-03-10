@@ -75,7 +75,7 @@ func TestViewCentersContentInLargeViewport(t *testing.T) {
 
 	titleLine := ""
 	for _, line := range lines {
-		if strings.Contains(line, "Codex Quota Monitor") {
+		if strings.Contains(line, "Codex Quota") {
 			titleLine = line
 			break
 		}
@@ -103,10 +103,10 @@ func TestViewHeaderHintKeepsVisibleGapFromTitle(t *testing.T) {
 
 	out := ansi.Strip(model.View())
 	for _, line := range strings.Split(out, "\n") {
-		titlePos := strings.Index(line, "Codex Quota Monitor")
+		titlePos := strings.Index(line, "Codex Quota")
 		hintPos := strings.Index(line, "Update available")
 		if titlePos >= 0 && hintPos >= 0 {
-			titleEnd := titlePos + len("Codex Quota Monitor")
+			titleEnd := titlePos + len("Codex Quota")
 			if hintPos-titleEnd < headerUpdateHintGap {
 				t.Fatalf("header hint gap = %d, want >= %d in line %q", hintPos-titleEnd, headerUpdateHintGap, line)
 			}
@@ -136,7 +136,7 @@ func TestViewTabModeHintAddsBlankLineBeforeTabs(t *testing.T) {
 	titleIdx := -1
 	tabsIdx := -1
 	for i, line := range lines {
-		if titleIdx == -1 && strings.Contains(line, "Codex Quota Monitor") {
+		if titleIdx == -1 && strings.Contains(line, "Codex Quota") {
 			titleIdx = i
 		}
 		if tabsIdx == -1 && strings.Contains(line, "user@example.com") {
@@ -171,7 +171,7 @@ func TestViewTabModeAddsBlankLineBeforeTabsWithoutHint(t *testing.T) {
 	titleIdx := -1
 	tabsIdx := -1
 	for i, line := range lines {
-		if titleIdx == -1 && strings.Contains(line, "Codex Quota Monitor") {
+		if titleIdx == -1 && strings.Contains(line, "Codex Quota") {
 			titleIdx = i
 		}
 		if tabsIdx == -1 && strings.Contains(line, "user@example.com") {

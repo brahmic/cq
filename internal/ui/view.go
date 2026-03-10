@@ -64,7 +64,7 @@ func (m Model) View() string {
 }
 
 func (m Model) renderHeader() string {
-	return TitleStyle.Render("🚀 Codex Quota Monitor")
+	return TitleStyle.Render("🚀 Codex Quota")
 }
 
 func (m Model) renderFooter() string {
