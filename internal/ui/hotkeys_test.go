@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -61,6 +62,21 @@ func TestEnterOpensActionMenuOnMainScreen(t *testing.T) {
 	}
 	if got.ApplyTargetSelect || got.ApplyConfirm {
 		t.Fatalf("did not expect apply flow to open directly on enter")
+	}
+}
+
+func TestEnterClosesErrorModal(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.Err = errors.New("boom")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+
+	if got.Err != nil {
+		t.Fatalf("expected error modal to close on enter")
+	}
+	if got.ActionMenuVisible {
+		t.Fatalf("did not expect action menu to open while dismissing error modal")
 	}
 }
 

@@ -41,16 +41,18 @@ func (m Model) View() string {
 	s.WriteString(footer)
 
 	content := s.String()
-	contentWidth := lipgloss.Width(content)
-	contentHeight := lipgloss.Height(content)
-
 	containerStyle := lipgloss.NewStyle().Padding(1, 2)
-	if m.Width > contentWidth+4 && m.Height > contentHeight+2 {
-		containerStyle = containerStyle.
-			Width(m.Width).
-			Height(m.Height).
-			Align(lipgloss.Center, lipgloss.Center)
+	hAlign := lipgloss.Left
+	vAlign := lipgloss.Top
+	if m.Width > 0 {
+		containerStyle = containerStyle.Width(m.Width)
+		hAlign = lipgloss.Center
 	}
+	if m.Height > 0 {
+		containerStyle = containerStyle.Height(m.Height)
+		vAlign = lipgloss.Center
+	}
+	containerStyle = containerStyle.Align(hAlign, vAlign)
 
 	baseView := containerStyle.Render(content)
 	baseView = m.overlayUpdateHint(baseView)
@@ -61,6 +63,41 @@ func (m Model) View() string {
 	}
 
 	return baseView
+}
+
+func (m Model) adaptiveContainerPadding(contentWidth int) (int, int) {
+	padY := 1
+	padX := 2
+
+	if m.Width <= 0 {
+		return padY, padX
+	}
+
+	if contentWidth+(padX*2) <= m.Width {
+		return padY, padX
+	}
+
+	available := m.Width - contentWidth
+	if available <= 0 {
+		return padY, 0
+	}
+
+	return padY, available / 2
+}
+
+func (m Model) preferredContentWidth() int {
+	if m.Width <= 0 {
+		return 0
+	}
+	if m.Width <= 12 {
+		return m.Width
+	}
+	usable := m.Width - 4
+	const maxContentWidth = 220
+	if usable > maxContentWidth {
+		return maxContentWidth
+	}
+	return usable
 }
 
 func (m Model) renderHeader() string {

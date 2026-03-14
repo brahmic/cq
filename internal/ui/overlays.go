@@ -47,7 +47,7 @@ func (m Model) currentOverlayModal() string {
 	}
 
 	if m.Err != nil {
-		return renderMessageModal("Error", m.Err.Error(), ErrorStyle, m.Width)
+		return m.renderErrorModal()
 	}
 
 	if m.Notice != "" {
@@ -59,6 +59,26 @@ func (m Model) currentOverlayModal() string {
 	}
 
 	return ""
+}
+
+func (m Model) renderErrorModal() string {
+	message := strings.TrimSpace(m.Err.Error())
+	if message == "" {
+		message = "Unknown error"
+	}
+	hint := "[enter/esc] Close"
+	width := messageModalWidth("Error", message+"\n"+hint, m.Width)
+	bodyWidth := width - 2
+	if bodyWidth < 1 {
+		bodyWidth = 1
+	}
+	wrappedMessage := lipgloss.NewStyle().Width(bodyWidth).Render(message)
+	content := strings.Join([]string{
+		ErrorStyle.Render("Error"),
+		InfoValueStyle.Render(wrappedMessage),
+		ActionMenuHintStyle.Render(hint),
+	}, "\n\n")
+	return InfoBoxStyle.Copy().Width(width).Render(content)
 }
 
 const (

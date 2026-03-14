@@ -41,6 +41,25 @@ func TestRenderMessageModalKeepsShortNoticeCompact(t *testing.T) {
 	}
 }
 
+func TestCurrentOverlayModal_ErrorIncludesDismissHint(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.Err = assertErr("token refresh failed")
+
+	out := ansi.Strip(m.currentOverlayModal())
+	if !strings.Contains(out, "token refresh failed") {
+		t.Fatalf("expected original error text in modal:\n%s", out)
+	}
+	if !strings.Contains(out, "[enter/esc] Close") {
+		t.Fatalf("expected close hint in error modal:\n%s", out)
+	}
+}
+
+type testErr string
+
+func (e testErr) Error() string { return string(e) }
+
+func assertErr(v string) error { return testErr(v) }
+
 func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	m := testModelForHotkeys(1)
 

@@ -22,7 +22,14 @@ func TestRenderWindowsViewSingleWindowHasGroupHeader(t *testing.T) {
 	})
 
 	out := ansi.Strip(model.renderWindowsView())
-	if !strings.Contains(out, "Weekly\n") {
+	hasWeeklyHeader := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "Weekly" {
+			hasWeeklyHeader = true
+			break
+		}
+	}
+	if !hasWeeklyHeader {
 		t.Fatalf("expected standalone group header for single window output:\n%s", out)
 	}
 	if !strings.Contains(out, "Weekly usage limit") {
@@ -47,14 +54,61 @@ func TestRenderWindowsViewMultipleWindowsKeepsGroupHeaders(t *testing.T) {
 	})
 
 	out := ansi.Strip(model.renderWindowsView())
-	if !strings.Contains(out, "5 hour\n") {
+	hasFiveHourHeader := false
+	hasWeeklyHeader := false
+	for _, line := range strings.Split(out, "\n") {
+		switch strings.TrimSpace(line) {
+		case "5 hour":
+			hasFiveHourHeader = true
+		case "Weekly":
+			hasWeeklyHeader = true
+		}
+	}
+	if !hasFiveHourHeader {
 		t.Fatalf("expected 5 hour group header, got:\n%s", out)
 	}
-	if !strings.Contains(out, "Weekly\n") {
+	if !hasWeeklyHeader {
 		t.Fatalf("expected Weekly group header, got:\n%s", out)
 	}
 	if !strings.Contains(out, "5 hour usage limit") || !strings.Contains(out, "Weekly usage limit") {
 		t.Fatalf("expected both window labels in output, got:\n%s", out)
+	}
+}
+
+func TestRenderWindowsView_CentersWindowHeaderOverBar(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 60.0,
+			ResetAt:     time.Now().Add(24 * time.Hour),
+		},
+	})
+	model.Width = 180
+
+	out := ansi.Strip(model.renderWindowsView())
+	lines := strings.Split(out, "\n")
+	headerIx := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "Weekly" {
+			headerIx = i
+			break
+		}
+	}
+	if headerIx < 0 || headerIx+1 >= len(lines) {
+		t.Fatalf("expected Weekly header followed by row, got:\n%s", out)
+	}
+	headerLine := lines[headerIx]
+	rowLine := lines[headerIx+1]
+
+	headerStart := strings.Index(headerLine, "Weekly")
+
+	nameWidth, barWidth, _, _ := model.windowRowLayout(604800)
+	barStart := model.windowLeadOffset(604800) + ansi.StringWidth(windowRowIndent) + nameWidth + 1
+	headerCenter := headerStart + (len("Weekly") / 2)
+	barCenter := barStart + (barWidth / 2)
+	if delta := headerCenter - barCenter; delta < -1 || delta > 1 {
+		t.Fatalf("header not centered over bar: headerCenter=%d barCenter=%d row=%q", headerCenter, barCenter, rowLine)
 	}
 }
 
@@ -443,7 +497,7 @@ func TestRenderCompactView_MixedRowsStayAligned(t *testing.T) {
 	if !strings.Contains(out, "Queued...") {
 		t.Fatalf("expected queued status in compact view")
 	}
-	if !strings.Contains(out, "30.0%") {
+	if !strings.Contains(out, "30%") {
 		t.Fatalf("expected percentage metadata in compact view")
 	}
 }
@@ -466,6 +520,97 @@ func TestRenderCompactView_NarrowWidthRendersWithoutBreakage(t *testing.T) {
 	}
 	if !strings.Contains(out, "user@example.com") {
 		t.Fatalf("expected account label in narrow mode output:\n%s", out)
+	}
+}
+
+func TestRenderCompactView_NarrowWidthDoesNotOverflowLineWidth(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.CompactMode = true
+	model.Width = 92
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "clawsharedbot.hastily044@site.test", Email: "x", AccountID: "1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "delise.nl.test@gmail.com", Email: "y", AccountID: "2", Source: config.SourceManaged, Writable: true},
+	}
+	model.UsageData = map[string]api.UsageData{
+		"a1": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 100.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+		"a2": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 79.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+	}
+
+	out := ansi.Strip(model.renderCompactView())
+	limit := model.preferredContentWidth()
+	for i, line := range strings.Split(out, "\n") {
+		if w := ansi.StringWidth(line); w > limit {
+			t.Fatalf("line %d width=%d exceeds limit=%d: %q", i, w, limit, line)
+		}
+	}
+}
+
+func TestRenderCompactView_VeryNarrowWidthDoesNotSplitPercentLines(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.CompactMode = true
+	model.Width = 60
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "clawsharedbot.hastily044@site.test", Email: "x", AccountID: "1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "delise.nl.test@gmail.com", Email: "y", AccountID: "2", Source: config.SourceManaged, Writable: true},
+	}
+	model.UsageData = map[string]api.UsageData{
+		"a1": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 100.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+		"a2": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 78.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+	}
+
+	out := ansi.Strip(model.renderCompactView())
+	if strings.Contains(out, "\n.0%") {
+		t.Fatalf("expected percent text to stay on same line without split, got:\n%s", out)
+	}
+}
+
+func TestView_CompactNarrowDoesNotWrapPercentFragmentsToOwnLines(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.CompactMode = true
+	model.Width = 60
+	model.Height = 36
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "clawsharedbot.hastily044@site.test", Email: "x", AccountID: "1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "delise.nl.test@gmail.com", Email: "y", AccountID: "2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.usa10@gmail.com", Email: "z", AccountID: "3", Source: config.SourceManaged, Writable: true},
+		{Key: "a4", Label: "delise.usa30@gmail.com", Email: "w", AccountID: "4", Source: config.SourceManaged, Writable: true},
+	}
+	model.UsageData = map[string]api.UsageData{
+		"a1": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 100.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+		"a2": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 100.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+		"a3": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 100.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+		"a4": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 100.0, ResetAt: time.Now().Add(6*24*time.Hour + 23*time.Hour)}}},
+	}
+
+	out := ansi.Strip(model.View())
+	for _, line := range strings.Split(out, "\n") {
+		if w := ansi.StringWidth(line); w > model.Width {
+			t.Fatalf("expected compact view line width <= %d, got %d in %q", model.Width, w, line)
+		}
+	}
+	if strings.Contains(out, "\n.0%") || strings.Contains(out, "\n  .0%") {
+		t.Fatalf("expected no wrapped percent fragments, got:\n%s", out)
 	}
 }
 
@@ -512,6 +657,359 @@ func TestRenderCompactView_LoadingAndQueuedShareRowGeometry(t *testing.T) {
 	}
 	if diff > 1 {
 		t.Fatalf("expected loading and queued rows to have near-equal width, got %d vs %d", loadingWidth, queuedWidth)
+	}
+}
+
+func TestView_DoesNotOverflowViewportWidthOnNarrowScreen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Width = 120
+	model.Height = 30
+
+	out := model.View()
+	for _, line := range strings.Split(out, "\n") {
+		if w := ansi.StringWidth(line); w > model.Width {
+			t.Fatalf("line width = %d, want <= %d\n%s", w, model.Width, ansi.Strip(line))
+		}
+	}
+}
+
+func TestRenderAccountTabs_DoesNotOverflowOnNarrowScreen(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 75.0,
+			ResetAt:     time.Now().Add(5 * time.Hour),
+		},
+	})
+	model.Width = 96
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "11.gas910@8alias.com", Email: "11.gas910@8alias.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "clawsharedbot.hastily044@site.test", Email: "clawsharedbot.hastily044@site.test", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.nl.test@gmail.com", Email: "delise.nl.test@gmail.com", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+		{Key: "a4", Label: "delise.usa10@gmail.com", Email: "delise.usa10@gmail.com", AccountID: "id-4", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 1
+
+	tabs := model.renderAccountTabs()
+	if w := ansi.StringWidth(tabs); w > model.Width-8 {
+		t.Fatalf("tabs width = %d, want <= %d\n%s", w, model.Width-8, ansi.Strip(tabs))
+	}
+}
+
+func TestRenderAccountTabs_ShowsNoMoreThanThreeAccounts(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 75.0,
+			ResetAt:     time.Now().Add(5 * time.Hour),
+		},
+	})
+	model.Width = 220
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "acc1@example.com", Email: "acc1@example.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "acc2@example.com", Email: "acc2@example.com", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "acc3@example.com", Email: "acc3@example.com", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+		{Key: "a4", Label: "acc4@example.com", Email: "acc4@example.com", AccountID: "id-4", Source: config.SourceManaged, Writable: true},
+		{Key: "a5", Label: "acc5@example.com", Email: "acc5@example.com", AccountID: "id-5", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 2
+
+	tabs := ansi.Strip(model.renderAccountTabs())
+	visible := 0
+	for _, account := range model.Accounts {
+		if strings.Contains(tabs, account.Label) {
+			visible++
+		}
+	}
+	if visible > 3 {
+		t.Fatalf("visible accounts = %d, want <= 3; tabs=%q", visible, tabs)
+	}
+}
+
+func TestView_DoesNotOverflowAcrossTypicalViewportRange(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "11.gas910@8alias.com", Email: "11.gas910@8alias.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "clawsharedbot.hastily044@site.test", Email: "clawsharedbot.hastily044@site.test", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.nl.test@gmail.com", Email: "delise.nl.test@gmail.com", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+		{Key: "a4", Label: "delise.usa10@gmail.com", Email: "delise.usa10@gmail.com", AccountID: "id-4", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 0
+	model.Height = 28
+
+	for width := 88; width <= 240; width++ {
+		model.Width = width
+		out := model.View()
+		for _, line := range strings.Split(out, "\n") {
+			if got := ansi.StringWidth(line); got > model.Width {
+				t.Fatalf("width=%d line width=%d exceeds viewport\n%s", width, got, ansi.Strip(line))
+			}
+		}
+	}
+}
+
+func TestView_MediumViewportKeepsHorizontalInset(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "11.gas910@8alias.com", Email: "11.gas910@8alias.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "clawsharedbot.hastily044@site.test", Email: "clawsharedbot.hastily044@site.test", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.nl.test@gmail.com", Email: "delise.nl.test@gmail.com", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+		{Key: "a4", Label: "delise.usa10@gmail.com", Email: "delise.usa10@gmail.com", AccountID: "id-4", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 0
+	model.Width = 120
+	model.Height = 28
+
+	out := ansi.Strip(model.View())
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "Codex Quota") {
+			if !strings.HasPrefix(line, "  ") {
+				t.Fatalf("expected at least two leading spaces before title on medium viewport, got %q", line)
+			}
+			return
+		}
+	}
+	t.Fatalf("title line not found in output:\n%s", out)
+}
+
+func TestView_FillsViewportCanvasWhenSizeIsKnown(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Width = 120
+	model.Height = 24
+
+	out := model.View()
+	lines := strings.Split(out, "\n")
+	if len(lines) != model.Height {
+		t.Fatalf("line count = %d, want %d", len(lines), model.Height)
+	}
+
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got != model.Width {
+			t.Fatalf("line %d width = %d, want %d\n%s", i, got, model.Width, ansi.Strip(line))
+		}
+	}
+}
+
+func TestView_WideViewportStaysVisiblyCentered(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "11.gas910@8alias.com", Email: "11.gas910@8alias.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "clawsharedbot.hastily044@site.test", Email: "clawsharedbot.hastily044@site.test", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.nl.test@gmail.com", Email: "delise.nl.test@gmail.com", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+		{Key: "a4", Label: "delise.usa10@gmail.com", Email: "delise.usa10@gmail.com", AccountID: "id-4", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 0
+	model.Width = 220
+	model.Height = 30
+
+	out := ansi.Strip(model.View())
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "Codex Quota") {
+			if !strings.HasPrefix(line, "                    ") { // at least ~20 spaces
+				t.Fatalf("expected title to remain visually centered on wide viewport, got %q", line)
+			}
+			return
+		}
+	}
+
+	t.Fatalf("title line not found in output:\n%s", out)
+}
+
+func TestView_TitleIsCenteredAcrossViewportWidths(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "11.gas910@8alias.com", Email: "11.gas910@8alias.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "clawsharedbot.hastily044@site.test", Email: "clawsharedbot.hastily044@site.test", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.nl.test@gmail.com", Email: "delise.nl.test@gmail.com", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+		{Key: "a4", Label: "delise.usa10@gmail.com", Email: "delise.usa10@gmail.com", AccountID: "id-4", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 0
+	model.Height = 30
+
+	for width := 176; width <= 320; width += 8 {
+		model.Width = width
+		out := ansi.Strip(model.View())
+		lines := strings.Split(out, "\n")
+		found := false
+		for _, line := range lines {
+			if !strings.Contains(line, "Codex Quota") {
+				continue
+			}
+			found = true
+			title := strings.TrimSpace(line)
+			titleWidth := ansi.StringWidth(title)
+			expected := (model.Width - titleWidth) / 2
+			actual := len(line) - len(strings.TrimLeft(line, " "))
+			if actual < expected-2 || actual > expected+2 {
+				t.Fatalf("width=%d title left=%d expected≈%d line=%q", width, actual, expected, line)
+			}
+			break
+		}
+		if !found {
+			t.Fatalf("title line not found for width=%d", width)
+		}
+	}
+}
+
+func TestView_WindowBarCenterAlignsWithTitleCenter(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "11.gas910@8alias.com", Email: "11.gas910@8alias.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "clawsharedbot.hastily044@site.test", Email: "x", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.nl.test@gmail.com", Email: "y", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 1
+	model.Width = 200
+	model.Height = 32
+
+	out := ansi.Strip(model.View())
+	lines := strings.Split(out, "\n")
+
+	titleCenter := -1
+	barCenter := -1
+	for _, line := range lines {
+		if titleCenter < 0 && strings.Contains(line, "Codex Quota") {
+			start := strings.Index(line, "Codex Quota")
+			titleCenter = start + (len("Codex Quota") / 2)
+		}
+		if barCenter < 0 && strings.Contains(line, "Weekly usage limit") {
+			runes := []rune(line)
+			startBar := -1
+			endBar := -1
+			for i, r := range runes {
+				if r == '█' || r == '·' {
+					if startBar < 0 {
+						startBar = i
+					}
+					endBar = i
+				} else if startBar >= 0 {
+					break
+				}
+			}
+			if startBar >= 0 && endBar >= startBar {
+				barCenter = startBar + ((endBar - startBar) / 2)
+			}
+		}
+	}
+
+	if titleCenter < 0 || barCenter < 0 {
+		t.Fatalf("failed to detect title/bar centers in output:\n%s", out)
+	}
+
+	delta := titleCenter - barCenter
+	if delta < -2 || delta > 2 {
+		t.Fatalf("expected title/bar centers aligned, got title=%d bar=%d delta=%d", titleCenter, barCenter, delta)
+	}
+}
+
+func TestView_WindowBarCenterStaysNearTitleCenterOnNarrowWidths(t *testing.T) {
+	model := testModelWithWindows([]api.QuotaWindow{
+		{
+			Label:       "Weekly usage limit",
+			WindowSec:   604800,
+			LeftPercent: 100.0,
+			ResetAt:     time.Now().Add(6*24*time.Hour + 23*time.Hour),
+		},
+	})
+	model.Accounts = []*config.Account{
+		{Key: "a1", Label: "11.gas910@8alias.com", Email: "11.gas910@8alias.com", AccountID: "id-1", Source: config.SourceManaged, Writable: true},
+		{Key: "a2", Label: "clawsharedbot.hastily044@site.test", Email: "x", AccountID: "id-2", Source: config.SourceManaged, Writable: true},
+		{Key: "a3", Label: "delise.nl.test@gmail.com", Email: "y", AccountID: "id-3", Source: config.SourceManaged, Writable: true},
+	}
+	model.ActiveAccountIx = 1
+	model.Height = 32
+
+	for _, width := range []int{96, 104, 112, 120} {
+		model.Width = width
+		out := ansi.Strip(model.View())
+		lines := strings.Split(out, "\n")
+
+		titleCenter := -1
+		barCenter := -1
+		for _, line := range lines {
+			if titleCenter < 0 && strings.Contains(line, "Codex Quota") {
+				start := strings.Index(line, "Codex Quota")
+				titleCenter = start + (len("Codex Quota") / 2)
+			}
+			if barCenter < 0 && strings.Contains(line, "Weekly") {
+				runes := []rune(line)
+				startBar := -1
+				endBar := -1
+				for i, r := range runes {
+					if r == '█' || r == '·' {
+						if startBar < 0 {
+							startBar = i
+						}
+						endBar = i
+					} else if startBar >= 0 {
+						break
+					}
+				}
+				if startBar >= 0 && endBar >= startBar {
+					barCenter = startBar + ((endBar - startBar) / 2)
+				}
+			}
+		}
+
+		if titleCenter < 0 || barCenter < 0 {
+			t.Fatalf("width=%d failed to detect title/bar centers in output:\n%s", width, out)
+		}
+
+		delta := titleCenter - barCenter
+		if delta < -4 || delta > 4 {
+			t.Fatalf("width=%d expected near-center alignment, got title=%d bar=%d delta=%d", width, titleCenter, barCenter, delta)
+		}
 	}
 }
 

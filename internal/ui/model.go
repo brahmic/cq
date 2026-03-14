@@ -209,6 +209,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "enter":
+			if m.Err != nil {
+				m.Err = nil
+				return m, nil
+			}
 			if m.activeAccount() == nil {
 				return m, nil
 			}

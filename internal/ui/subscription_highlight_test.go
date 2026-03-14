@@ -127,7 +127,7 @@ func TestCompactView_SubscriptionRendersDistinctPercentStyleWithoutMarker(t *tes
 	}
 	m.PlanTypeByAccount[account.Key] = "team"
 	subscribedView := m.renderCompactView()
-	if !strings.Contains(subscribedView, "40.0%") {
+	if !strings.Contains(subscribedView, "40%") {
 		t.Fatalf("expected percent in compact view for subscribed account")
 	}
 
